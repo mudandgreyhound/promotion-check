@@ -106,6 +106,8 @@ tbody tr:hover{background:var(--surface-2)}
 .empty{padding:36px;text-align:center;color:var(--muted)}
 .foot{margin-top:18px;font-size:.72rem;color:var(--muted);text-align:center}
 .loading{padding:36px;text-align:center;color:var(--muted)}
+.pbar{height:10px;background:var(--surface-2);border-radius:6px;overflow:hidden}
+.pbar-fill{height:100%;background:linear-gradient(90deg,var(--pink),var(--orange));width:6%;transition:width .5s ease}
 
 /* modal */
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;
@@ -204,6 +206,16 @@ tbody tr:hover{background:var(--surface-2)}
     <div class="frow" style="margin-bottom:12px;justify-content:space-between">
       <div><span class="flabel">อัปเดตล่าสุด:</span> <span class="sub" id="bRun">—</span></div>
       <button class="hbtn" id="runBtn" hidden style="color:var(--pink);border-color:var(--pink)">🔄 รัน ETL ตอนนี้</button>
+    </div>
+
+    <!-- progress สดตอนรัน ETL -->
+    <div id="runProgress" hidden class="filters" style="margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+        <span id="rpText" style="font-weight:600">กำลังเริ่ม…</span>
+        <span id="rpPct" class="nums" style="color:var(--pink);font-weight:700"></span>
+      </div>
+      <div class="pbar"><div class="pbar-fill" id="rpFill"></div></div>
+      <div id="rpStats" class="sub" style="margin-top:8px"></div>
     </div>
 
     <!-- sub-tabs: มุมมองโปร (คีย์หลัก) / มุมมองสาขา -->
@@ -501,32 +513,54 @@ $("#bq").addEventListener("input", e=>{ clearTimeout(bqTimer); bqTimer=setTimeou
   bq=e.target.value.trim(); if(bView==="coupon") renderCoupon(); else renderShop();
 },200); });
 
-/* ---------- run ETL (admin) ---------- */
+/* ---------- run ETL (admin) + progress สด ---------- */
 let polling=null;
+function stopPoll(){ clearInterval(polling); polling=null; }
 $("#runBtn").addEventListener("click", async ()=>{
-  if(!confirm("รัน ETL ดึงข้อมูลล่าสุด + เทียบทุกสาขา?\n(ใช้เวลาสักครู่ หน้าเว็บจะอัปเดตเองเมื่อเสร็จ)")) return;
+  if(!confirm("รัน ETL ดึงข้อมูลล่าสุด + เทียบทุกสาขา?\n(หน้าเว็บจะแสดงความคืบหน้า และอัปเดตเองเมื่อเสร็จ)")) return;
   const btn=$("#runBtn");
+  let lastId=0;
   try{
     const last = await api("/api/runs?limit=1");
-    const lastId = last.runs.length ? last.runs[0].run_id : 0;
-    const r = await api("/api/sync/run", {method:"POST", body:"{}"});
-    if(r.already_running){ alert("มี ETL กำลังรันอยู่แล้ว รอสักครู่"); }
-    btn.disabled=true; btn.textContent="⏳ กำลังรัน ETL…";
-    // poll จนกว่าจะมี run ใหม่ที่ status=done
-    clearInterval(polling);
-    polling=setInterval(async ()=>{
-      try{
-        const d = await api("/api/runs?limit=1");
-        const run = d.runs[0];
-        if(run && run.run_id > lastId && run.status==="done"){
-          clearInterval(polling);
-          btn.disabled=false; btn.textContent="🔄 รัน ETL ตอนนี้";
-          branchLoaded=false; loadBranch(); loadSummary();
-          alert("ETL เสร็จแล้ว ✅  ต่อติด "+run.shops_ok+"/"+run.shops_total+" สาขา · ตกหล่นรวม "+run.total_missing_active);
-        }
-      }catch(e){}
-    }, 5000);
-  }catch(err){ alert("สั่งรันไม่สำเร็จ: "+err.message); btn.disabled=false; btn.textContent="🔄 รัน ETL ตอนนี้"; }
+    lastId = last.runs.length ? last.runs[0].run_id : 0;
+    await api("/api/sync/run", {method:"POST", body:"{}"});
+  }catch(err){ alert("สั่งรันไม่สำเร็จ: "+err.message); return; }
+
+  btn.disabled=true; btn.textContent="⏳ กำลังรัน ETL…";
+  $("#runProgress").hidden=false;
+  $("#rpText").textContent="กำลังเริ่ม…"; $("#rpPct").textContent="";
+  $("#rpFill").style.width="6%"; $("#rpStats").textContent="";
+
+  stopPoll();
+  let ticks=0;
+  polling=setInterval(async ()=>{
+    ticks++;
+    if(ticks>960){ stopPoll(); return; }   // กันค้าง (~40 นาที)
+    try{
+      const d = await api("/api/runs?limit=1");
+      const run = d.runs[0];
+      if(!run) return;
+      if(run.status==="running"){
+        const total=run.shops_total||0;
+        const done=(run.shops_ok||0)+(run.shops_failed||0);
+        const pct = total ? Math.round(done/total*100) : 0;
+        $("#rpText").textContent = run.note || "กำลังทำงาน…";
+        $("#rpPct").textContent = total ? pct+"%" : "";
+        $("#rpFill").style.width = (total ? pct : 6) + "%";
+        $("#rpStats").textContent = total
+          ? ("ต่อติด "+(run.shops_ok||0)+" · ต่อไม่ได้ "+(run.shops_failed||0)+" · ตกหล่น "+(run.total_missing_active||0))
+          : "";
+      } else if(run.status==="done" && run.run_id>lastId){
+        stopPoll();
+        $("#rpText").textContent = run.note || "เสร็จสมบูรณ์ ✅";
+        $("#rpPct").textContent="100%"; $("#rpFill").style.width="100%";
+        $("#rpStats").textContent = "ต่อติด "+run.shops_ok+"/"+run.shops_total+" · ตกหล่นรวม "+run.total_missing_active;
+        btn.disabled=false; btn.textContent="🔄 รัน ETL ตอนนี้";
+        branchLoaded=false; loadBranch(); loadSummary();
+        setTimeout(()=>{ $("#runProgress").hidden=true; }, 10000);
+      }
+    }catch(e){}
+  }, 2500);
 });
 
 /* ---------- modal ---------- */
