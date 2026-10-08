@@ -196,24 +196,50 @@ tbody tr:hover{background:var(--surface-2)}
   <!-- TAB 2 -->
   <div id="tabBranch" hidden>
     <div class="kpis">
-      <div class="kpi good"><div class="n" id="bOk">–</div><div class="l">สาขาครบ</div></div>
-      <div class="kpi bad"><div class="n" id="bInc">–</div><div class="l">🔴 มีตกหล่น</div></div>
-      <div class="kpi e"><div class="n" id="bOff">–</div><div class="l">ต่อไม่ได้</div></div>
-      <div class="kpi"><div class="n" id="bMiss">–</div><div class="l">ตกหล่นรวม</div></div>
+      <div class="kpi good"><div class="n" id="bOk">–</div><div class="l">สาขารับครบ</div></div>
+      <div class="kpi bad"><div class="n" id="bInc">–</div><div class="l">🔴 สาขามีตกหล่น</div></div>
+      <div class="kpi e"><div class="n" id="bOff">–</div><div class="l">สาขาต่อไม่ได้</div></div>
+      <div class="kpi"><div class="n" id="bMiss">–</div><div class="l">รายการตกหล่นรวม</div></div>
     </div>
     <div class="frow" style="margin-bottom:12px;justify-content:space-between">
       <div><span class="flabel">อัปเดตล่าสุด:</span> <span class="sub" id="bRun">—</span></div>
       <button class="hbtn" id="runBtn" hidden style="color:var(--pink);border-color:var(--pink)">🔄 รัน ETL ตอนนี้</button>
     </div>
-    <div class="count" id="bCount"></div>
-    <div class="tablewrap">
-      <div class="tscroll"><table>
-        <thead><tr><th>รหัส</th><th>สาขา</th><th>สถานะ</th><th>ควรได้</th><th>มีจริง</th>
-          <th>ครบ</th><th>🔴ตกหล่น</th><th>หมดอายุ</th><th>เกิน</th></tr></thead>
-        <tbody id="bBody"></tbody>
-      </table></div>
-      <div class="empty" id="bEmpty" hidden></div>
-      <div class="loading" id="bLoad">กำลังโหลด…</div>
+
+    <!-- sub-tabs: มุมมองโปร (คีย์หลัก) / มุมมองสาขา -->
+    <div class="frow" style="margin-bottom:14px">
+      <div class="chipset" id="subView">
+        <span class="chip on" data-v="coupon">🎫 ตามโปร (ส่งแล้วใช้ไม่ได้)</span>
+        <span class="chip" data-v="shop">🏪 ตามสาขา</span>
+      </div>
+      <input class="search" id="bq" placeholder="ค้นหา รหัส/ชื่อ" style="flex:1 1 180px">
+    </div>
+
+    <!-- VIEW: ตามโปร -->
+    <div id="viewCoupon">
+      <div class="count" id="mcCount"></div>
+      <div class="tablewrap">
+        <div class="tscroll"><table>
+          <thead><tr><th>รหัสโปร</th><th>ชื่อโปรโมชั่น</th><th>หมดอายุ</th><th>🔴 ร้านที่ใช้ไม่ได้</th></tr></thead>
+          <tbody id="mcBody"></tbody>
+        </table></div>
+        <div class="empty" id="mcEmpty" hidden></div>
+        <div class="loading" id="mcLoad">กำลังโหลด…</div>
+      </div>
+    </div>
+
+    <!-- VIEW: ตามสาขา -->
+    <div id="viewShop" hidden>
+      <div class="count" id="bCount"></div>
+      <div class="tablewrap">
+        <div class="tscroll"><table>
+          <thead><tr><th>รหัส</th><th>สาขา</th><th>สถานะ</th><th>ควรได้</th><th>มีจริง</th>
+            <th>ครบ</th><th>🔴ตกหล่น</th><th>หมดอายุ</th><th>เกิน</th></tr></thead>
+          <tbody id="bBody"></tbody>
+        </table></div>
+        <div class="empty" id="bEmpty" hidden></div>
+        <div class="loading" id="bLoad" hidden>กำลังโหลด…</div>
+      </div>
     </div>
   </div>
 
@@ -366,10 +392,10 @@ $("#cBody").addEventListener("click", async e=>{
 });
 
 /* ---------- branch check ---------- */
-let branchLoaded=false;
+let branchLoaded=false, bView="coupon", couponData=[], shopData=[], bq="";
+
 async function loadBranch(){
   branchLoaded=true;
-  $("#bLoad").hidden=false; $("#bEmpty").hidden=true;
   try{
     const s = await api("/api/shops/summary");
     const by=s.by_status||{};
@@ -378,21 +404,72 @@ async function loadBranch(){
     $("#bOff").textContent=(by.offline||0).toLocaleString();
     $("#bMiss").textContent=(s.total_missing_active!=null?s.total_missing_active:0).toLocaleString();
     $("#bRun").textContent = s.finished_at ? s.finished_at.replace("T"," ").slice(0,16) : "ยังไม่มีผล";
+  }catch(e){}
+  // โหลดทั้ง 2 มุมมองไว้ (กรองฝั่ง client เร็ว)
+  loadByCoupon(); loadByShop();
+}
+
+/* -- มุมมองตามโปร (คีย์หลัก) -- */
+async function loadByCoupon(){
+  $("#mcLoad").hidden=false; $("#mcEmpty").hidden=true;
+  try{
+    const d = await api("/api/missing/by-coupon");
+    couponData = d.coupons;
+    renderCoupon();
+  }catch(e){ $("#mcCount").textContent="โหลดไม่สำเร็จ: "+e.message; }
+  finally{ $("#mcLoad").hidden=true; }
+}
+function renderCoupon(){
+  let rows = couponData;
+  if(bq){ const q=bq.toLowerCase(); rows=rows.filter(x=>(x.code+" "+x.desc).toLowerCase().includes(q)); }
+  $("#mcCount").textContent = "โปรที่ส่งแล้วแต่บางสาขาใช้ไม่ได้ "+rows.length.toLocaleString()+" รายการ (เรียงตามจำนวนร้านมากสุด)";
+  const tb=$("#mcBody");
+  if(!rows.length){ tb.innerHTML=""; $("#mcEmpty").textContent="✅ ไม่มีโปรที่ตกหล่น"; $("#mcEmpty").hidden=false; return; }
+  $("#mcEmpty").hidden=true;
+  tb.innerHTML = rows.map(x=>
+    '<tr><td><span class="code" data-cpmiss="'+esc(x.code)+'">'+esc(x.code)+"</span></td>"+
+    '<td class="desc">'+esc(x.desc)+"</td>"+
+    '<td class="nums" style="color:var(--red)">'+(x.end||"")+"</td>"+
+    '<td class="nums" style="color:var(--red);font-weight:700;font-size:1.05em">'+x.shops_missing.toLocaleString()+" ร้าน</td></tr>"
+  ).join("");
+}
+$("#mcBody").addEventListener("click", async e=>{
+  const el=e.target.closest(".code"); if(!el)return;
+  openModal("กำลังโหลด…");
+  try{
+    const d = await api("/api/missing/coupon/"+encodeURIComponent(el.dataset.cpmiss));
+    const rows = d.shops.map(s=>'<tr><td class="nums">'+esc(s.shop)+"</td><td>"+esc(s.name)+"</td></tr>").join("");
+    openModal("<h2>โปร "+esc(d.code)+"</h2><div class='sub'>🔴 ส่งแล้วแต่ใช้ไม่ได้ที่ "+d.count+" ร้าน</div>"+
+      "<div class='tscroll' style='margin-top:12px'><table><thead><tr><th>รหัสสาขา</th><th>ชื่อสาขา</th></tr></thead><tbody>"+rows+"</tbody></table></div>");
+  }catch(err){ openModal("<p style='color:var(--red)'>"+esc(err.message)+"</p>"); }
+});
+
+/* -- มุมมองตามสาขา -- */
+async function loadByShop(){
+  $("#bLoad").hidden=false; $("#bEmpty").hidden=true;
+  try{
     const d = await api("/api/shops?only_bad=1");
-    $("#bCount").textContent = "สาขาที่มีปัญหา "+d.count.toLocaleString()+" แห่ง (เรียงตามตกหล่นมากสุด)";
-    const tb=$("#bBody");
-    if(!d.shops.length){ tb.innerHTML=""; $("#bEmpty").textContent="✅ ทุกสาขารับโปรครบ"; $("#bEmpty").hidden=false; $("#bLoad").hidden=true; return; }
-    tb.innerHTML = d.shops.map(x=>{
-      const stc = x.status==="incomplete"?"st-incomplete":(x.status==="offline"?"st-offline":"st-ok");
-      const stl = x.status==="incomplete"?"มีตกหล่น":(x.status==="offline"?"ต่อไม่ได้":"ครบ");
-      const code = x.missing_active>0 ? '<span class="code" data-shop="'+esc(x.shop)+'">'+esc(x.shop)+"</span>" : esc(x.shop);
-      return "<tr><td>"+code+'</td><td>'+esc(x.name||"")+'</td><td><span class="st '+stc+'">'+stl+"</span></td>"+
-        '<td class="nums">'+x.should_have+'</td><td class="nums">'+x.branch_has+'</td><td class="nums">'+x.matched+"</td>"+
-        '<td class="nums" style="color:var(--red);font-weight:600">'+x.missing_active+'</td>'+
-        '<td class="nums">'+x.missing_expired+'</td><td class="nums">'+x.extra+"</td></tr>";
-    }).join("");
+    shopData = d.shops;
+    renderShop();
   }catch(e){ $("#bCount").textContent="โหลดไม่สำเร็จ: "+e.message; }
   finally{ $("#bLoad").hidden=true; }
+}
+function renderShop(){
+  let rows = shopData;
+  if(bq){ const q=bq.toLowerCase(); rows=rows.filter(x=>(x.shop+" "+(x.name||"")).toLowerCase().includes(q)); }
+  $("#bCount").textContent = "สาขาที่มีปัญหา "+rows.length.toLocaleString()+" แห่ง (เรียงตามตกหล่นมากสุด)";
+  const tb=$("#bBody");
+  if(!rows.length){ tb.innerHTML=""; $("#bEmpty").textContent="✅ ทุกสาขารับโปรครบ"; $("#bEmpty").hidden=false; return; }
+  $("#bEmpty").hidden=true;
+  tb.innerHTML = rows.map(x=>{
+    const stc = x.status==="incomplete"?"st-incomplete":(x.status==="offline"?"st-offline":"st-ok");
+    const stl = x.status==="incomplete"?"มีตกหล่น":(x.status==="offline"?"ต่อไม่ได้":"ครบ");
+    const code = x.missing_active>0 ? '<span class="code" data-shop="'+esc(x.shop)+'">'+esc(x.shop)+"</span>" : esc(x.shop);
+    return "<tr><td>"+code+'</td><td>'+esc(x.name||"")+'</td><td><span class="st '+stc+'">'+stl+"</span></td>"+
+      '<td class="nums">'+x.should_have+'</td><td class="nums">'+x.branch_has+'</td><td class="nums">'+x.matched+"</td>"+
+      '<td class="nums" style="color:var(--red);font-weight:600">'+x.missing_active+'</td>'+
+      '<td class="nums">'+x.missing_expired+'</td><td class="nums">'+x.extra+"</td></tr>";
+  }).join("");
 }
 $("#bBody").addEventListener("click", async e=>{
   const el=e.target.closest(".code"); if(!el)return;
@@ -405,6 +482,19 @@ $("#bBody").addEventListener("click", async e=>{
       "<div class='tscroll' style='margin-top:12px'><table><thead><tr><th>รหัส</th><th>ชื่อโปร</th><th>หมดอายุ</th></tr></thead><tbody>"+rows+"</tbody></table></div>");
   }catch(err){ openModal("<p style='color:var(--red)'>"+esc(err.message)+"</p>"); }
 });
+
+/* -- สลับมุมมอง + ค้นหา -- */
+$("#subView").addEventListener("click", e=>{
+  const el=e.target.closest(".chip"); if(!el)return;
+  $("#subView").querySelectorAll(".chip").forEach(c=>c.classList.remove("on")); el.classList.add("on");
+  bView=el.dataset.v;
+  $("#viewCoupon").hidden = bView!=="coupon";
+  $("#viewShop").hidden   = bView!=="shop";
+});
+let bqTimer;
+$("#bq").addEventListener("input", e=>{ clearTimeout(bqTimer); bqTimer=setTimeout(()=>{
+  bq=e.target.value.trim(); if(bView==="coupon") renderCoupon(); else renderShop();
+},200); });
 
 /* ---------- run ETL (admin) ---------- */
 let polling=null;
