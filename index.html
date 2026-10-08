@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dunkin Coupon Monitor</title>
+<style>
+/* ===== แก้บรรทัดเดียวถ้า API อยู่โดเมนอื่น (ดู <script> ล่างสุด: API_BASE) ===== */
+:root{
+  --bg:#faf7f4; --surface:#fff; --surface-2:#f4efe9;
+  --fg:#2b2320; --muted:#8a7d74; --line:#e7ded5;
+  --pink:#e5308a; --orange:#f58220;
+  --ok:#2e9e6b; --warn:#d98a1f; --dead:#b0a69c; --red:#d64545;
+  --shadow:0 1px 3px rgba(80,50,30,.08),0 4px 16px rgba(80,50,30,.04);
+  --r:12px;
+  --sans:"DM Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --mono:"DM Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#1a1614; --surface:#241f1c; --surface-2:#2e2824;
+  --fg:#f0e9e3; --muted:#a89a90; --line:#3a332e;
+  --pink:#ff5aa8; --orange:#ff9d47;
+  --ok:#4cc58c; --warn:#f0a93d; --dead:#6b625a; --red:#ff6b6b;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#1a1614; --surface:#241f1c; --surface-2:#2e2824;
+  --fg:#f0e9e3; --muted:#a89a90; --line:#3a332e;
+  --pink:#ff5aa8; --orange:#ff9d47;
+  --ok:#4cc58c; --warn:#f0a93d; --dead:#6b625a; --red:#ff6b6b; color-scheme:dark;
+}
+*{box-sizing:border-box} html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.45;font-size:14px}
+[hidden]{display:none!important}
+.wrap{max-width:1180px;margin:0 auto;padding-inline:16px;padding-block:18px 48px}
+
+/* login */
+.login{min-height:70vh;display:flex;align-items:center;justify-content:center}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+      box-shadow:var(--shadow);padding:28px;width:100%;max-width:360px}
+.card h1{font-size:1.3rem;margin:0 0 4px} .card .sub{color:var(--muted);font-size:.85rem;margin-bottom:18px}
+label{display:block;font-size:.78rem;color:var(--muted);margin:10px 0 4px;text-transform:uppercase;letter-spacing:.05em}
+input{width:100%;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;
+      padding:10px 12px;color:var(--fg);font-family:inherit;font-size:.95rem}
+.btn{background:var(--pink);color:#fff;border:none;border-radius:8px;padding:11px 18px;
+     font-family:inherit;font-size:.92rem;font-weight:600;cursor:pointer;width:100%;margin-top:18px}
+.btn:hover{filter:brightness(1.05)} .btn:disabled{opacity:.6;cursor:default}
+.err{color:var(--red);font-size:.82rem;margin-top:10px;min-height:1em}
+
+/* header */
+.head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+h1.title{font-size:1.5rem;font-weight:700;margin:0;letter-spacing:-.01em}
+.sub{color:var(--muted);font-size:.85rem;margin-top:2px}
+.hbtn{background:var(--surface);border:1px solid var(--line);color:var(--muted);border-radius:8px;
+      padding:7px 12px;font-size:.8rem;cursor:pointer;font-family:inherit}
+.hbtn:hover{color:var(--fg)}
+
+.tabs{display:flex;gap:4px;margin-bottom:18px;border-bottom:2px solid var(--line)}
+.tab{background:none;border:none;padding:10px 18px;font-family:inherit;font-size:.9rem;font-weight:600;
+     color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px}
+.tab:hover{color:var(--fg)} .tab.on{color:var(--pink);border-bottom-color:var(--pink)}
+
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+@media(max-width:640px){.kpis{grid-template-columns:repeat(2,1fr)}}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;box-shadow:var(--shadow)}
+.kpi .n{font-size:1.9rem;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
+.kpi .l{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-top:6px}
+.kpi.a .n{color:var(--ok)} .kpi.u .n{color:var(--orange)} .kpi.e .n{color:var(--dead)}
+.kpi.bad .n{color:var(--red)} .kpi.good .n{color:var(--ok)}
+
+.filters{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;
+         margin-bottom:16px;box-shadow:var(--shadow)}
+.frow{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.search{flex:1 1 220px;min-width:0}
+.chipset{display:flex;gap:6px;flex-wrap:wrap}
+.chip{background:var(--surface-2);border:1px solid var(--line);color:var(--muted);border-radius:20px;
+      padding:6px 13px;font-size:.78rem;cursor:pointer;font-family:inherit;white-space:nowrap}
+.chip:hover{border-color:var(--pink)} .chip.on{background:var(--pink);border-color:var(--pink);color:#fff;font-weight:600}
+.chip.on.t2{background:var(--orange);border-color:var(--orange)}
+.flabel{font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;align-self:center}
+
+.tablewrap{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden}
+.tscroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+thead th{position:sticky;top:0;background:var(--surface-2);text-align:left;padding:11px 12px;font-size:.7rem;
+         text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600;white-space:nowrap}
+tbody td{padding:10px 12px;border-top:1px solid var(--line);vertical-align:middle}
+tbody tr:hover{background:var(--surface-2)}
+.code{font-family:var(--mono);font-size:.82rem;font-weight:500;color:var(--pink);cursor:pointer}
+.code:hover{text-decoration:underline}
+.desc{max-width:280px;min-width:150px} .nums{font-variant-numeric:tabular-nums;white-space:nowrap}
+.pill{display:inline-block;padding:2px 9px;border-radius:12px;font-size:.72rem;font-weight:600;white-space:nowrap}
+.p-act{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)}
+.p-up{background:color-mix(in srgb,var(--orange) 18%,transparent);color:var(--orange)}
+.p-exp{background:var(--surface-2);color:var(--dead)}
+.tier{display:inline-block;padding:2px 8px;border-radius:6px;font-size:.7rem;font-weight:600;white-space:nowrap}
+.t-all{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
+.t-wide{background:color-mix(in srgb,var(--orange) 15%,transparent);color:var(--warn)}
+.t-specific{background:color-mix(in srgb,var(--pink) 15%,transparent);color:var(--pink)}
+.t-none{background:var(--surface-2);color:var(--muted)}
+.st{display:inline-block;padding:2px 8px;border-radius:6px;font-size:.7rem;font-weight:600}
+.st-ok{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
+.st-incomplete{background:color-mix(in srgb,var(--red) 15%,transparent);color:var(--red)}
+.st-offline{background:var(--surface-2);color:var(--muted)}
+.count{font-size:.8rem;color:var(--muted);margin:14px 2px 8px}
+.empty{padding:36px;text-align:center;color:var(--muted)}
+.foot{margin-top:18px;font-size:.72rem;color:var(--muted);text-align:center}
+.loading{padding:36px;text-align:center;color:var(--muted)}
+
+/* modal */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;
+       padding:16px;z-index:50}
+.modal .box{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);
+            max-width:560px;width:100%;max-height:80vh;overflow:auto;padding:22px}
+.modal h2{margin:0 0 2px;font-size:1.1rem} .modal .x{float:right;cursor:pointer;color:var(--muted);font-size:1.3rem;line-height:1}
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<div class="wrap login" id="loginView">
+  <form class="card" id="loginForm">
+    <h1>🎫 Coupon Monitor</h1>
+    <div class="sub">เข้าสู่ระบบติดตามโปรโมชั่น Dunkin</div>
+    <label for="u">Username</label>
+    <input id="u" autocomplete="username" required>
+    <label for="p">Password</label>
+    <input id="p" type="password" autocomplete="current-password" required>
+    <button class="btn" id="loginBtn" type="submit">เข้าสู่ระบบ</button>
+    <div class="err" id="loginErr"></div>
+  </form>
+</div>
+
+<!-- ============ APP ============ -->
+<div class="wrap" id="appView" hidden>
+  <div class="head">
+    <div>
+      <h1 class="title">Dunkin Coupon Monitor</h1>
+      <div class="sub" id="appSub">—</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="hbtn" id="themeBtn">◐</button>
+      <button class="hbtn" id="logoutBtn">ออกจากระบบ</button>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab on" data-tab="overview">📋 ภาพรวมโปร</button>
+    <button class="tab" data-tab="branch">🔍 ตรวจสาขา</button>
+  </div>
+
+  <!-- TAB 1 -->
+  <div id="tabOverview">
+    <div class="kpis">
+      <div class="kpi a"><div class="n" id="kAct">–</div><div class="l">Active</div></div>
+      <div class="kpi u"><div class="n" id="kUp">–</div><div class="l">Upcoming</div></div>
+      <div class="kpi e"><div class="n" id="kExp">–</div><div class="l">Expired</div></div>
+      <div class="kpi"><div class="n" id="kAll">–</div><div class="l">ทั้งหมด</div></div>
+    </div>
+    <div class="filters">
+      <div class="frow" style="margin-bottom:10px">
+        <input class="search" id="q" placeholder="ค้นหา รหัส/ชื่อโปร เช่น GRAB, 5 Do, IC1841">
+      </div>
+      <div class="frow" style="margin-bottom:8px">
+        <span class="flabel">สถานะ</span>
+        <div class="chipset" id="statusF">
+          <span class="chip on" data-s="Active">Active</span>
+          <span class="chip" data-s="Upcoming">Upcoming</span>
+          <span class="chip" data-s="Expired">Expired</span>
+          <span class="chip" data-s="">ทั้งหมด</span>
+        </div>
+      </div>
+      <div class="frow">
+        <span class="flabel">Tier</span>
+        <div class="chipset" id="tierF">
+          <span class="chip t2 on" data-t="">ทุก tier</span>
+          <span class="chip t2" data-t="all">ทั่วไป</span>
+          <span class="chip t2" data-t="wide">กว้าง</span>
+          <span class="chip t2" data-t="specific">เฉพาะสาขา</span>
+          <span class="chip t2" data-t="none">ไม่ผูกสาขา</span>
+        </div>
+      </div>
+    </div>
+    <div class="count" id="cCount"></div>
+    <div class="tablewrap">
+      <div class="tscroll"><table>
+        <thead><tr><th>รหัส</th><th>ชื่อโปรโมชั่น</th><th>เริ่ม</th><th>สิ้นสุด</th>
+          <th>เวลา</th><th>ส่วนลด</th><th>สาขา</th><th>Tier</th><th>ส่ง</th><th>สถานะ</th></tr></thead>
+        <tbody id="cBody"></tbody>
+      </table></div>
+      <div class="empty" id="cEmpty" hidden>ไม่พบคูปอง</div>
+      <div class="loading" id="cLoad">กำลังโหลด…</div>
+    </div>
+  </div>
+
+  <!-- TAB 2 -->
+  <div id="tabBranch" hidden>
+    <div class="kpis">
+      <div class="kpi good"><div class="n" id="bOk">–</div><div class="l">สาขาครบ</div></div>
+      <div class="kpi bad"><div class="n" id="bInc">–</div><div class="l">🔴 มีตกหล่น</div></div>
+      <div class="kpi e"><div class="n" id="bOff">–</div><div class="l">ต่อไม่ได้</div></div>
+      <div class="kpi"><div class="n" id="bMiss">–</div><div class="l">ตกหล่นรวม</div></div>
+    </div>
+    <div class="frow" style="margin-bottom:12px;justify-content:space-between">
+      <div><span class="flabel">อัปเดตล่าสุด:</span> <span class="sub" id="bRun">—</span></div>
+      <button class="hbtn" id="runBtn" hidden style="color:var(--pink);border-color:var(--pink)">🔄 รัน ETL ตอนนี้</button>
+    </div>
+    <div class="count" id="bCount"></div>
+    <div class="tablewrap">
+      <div class="tscroll"><table>
+        <thead><tr><th>รหัส</th><th>สาขา</th><th>สถานะ</th><th>ควรได้</th><th>มีจริง</th>
+          <th>ครบ</th><th>🔴ตกหล่น</th><th>หมดอายุ</th><th>เกิน</th></tr></thead>
+        <tbody id="bBody"></tbody>
+      </table></div>
+      <div class="empty" id="bEmpty" hidden></div>
+      <div class="loading" id="bLoad">กำลังโหลด…</div>
+    </div>
+  </div>
+
+  <div class="foot">ข้อมูลจาก CM POS Head IT (GD_Master) + สาขา · ผ่าน API :8604</div>
+</div>
+
+<!-- modal: coupon detail / shop missing -->
+<div class="modal" id="modal" hidden>
+  <div class="box">
+    <span class="x" id="modalX">×</span>
+    <div id="modalBody"></div>
+  </div>
+</div>
+
+<script>
+/* ========================================================================
+   API_BASE — แก้ตรงนี้ถ้า API อยู่โดเมน/พอร์ตอื่น
+   ว่าง "" = โดเมนเดียวกับหน้านี้ (กรณี serve ผ่าน FastAPI static)
+   ======================================================================== */
+const API_BASE = "https://promotion-check.mobile1234.site";
+
+const $ = s => document.querySelector(s);
+let TOKEN = null, ROLE = null;
+try { TOKEN = localStorage.getItem("cm_token"); } catch(e){}
+
+async function api(path, opts={}){
+  const h = Object.assign({"Content-Type":"application/json"}, opts.headers||{});
+  if (TOKEN) h["Authorization"] = "Bearer " + TOKEN;
+  const r = await fetch(API_BASE + path, Object.assign({}, opts, {headers:h}));
+  if (r.status === 401){ doLogout(); throw new Error("กรุณาเข้าสู่ระบบใหม่"); }
+  const data = await r.json().catch(()=>({}));
+  if (!r.ok) throw new Error(data.detail || ("HTTP "+r.status));
+  return data;
+}
+function esc(s){return (s||"").toString().replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+
+/* ---------- login ---------- */
+$("#loginForm").addEventListener("submit", async e=>{
+  e.preventDefault();
+  $("#loginErr").textContent = "";
+  $("#loginBtn").disabled = true;
+  try{
+    const d = await api("/api/login", {method:"POST",
+      body: JSON.stringify({username:$("#u").value.trim(), password:$("#p").value})});
+    TOKEN = d.token;
+    try{ localStorage.setItem("cm_token", TOKEN); }catch(e){}
+    showApp(d.user);
+  }catch(err){ $("#loginErr").textContent = err.message; }
+  finally{ $("#loginBtn").disabled = false; }
+});
+function doLogout(){
+  TOKEN = null;
+  try{ localStorage.removeItem("cm_token"); }catch(e){}
+  $("#appView").hidden = true; $("#loginView").hidden = false;
+}
+$("#logoutBtn").addEventListener("click", doLogout);
+
+/* ---------- theme ---------- */
+$("#themeBtn").addEventListener("click", ()=>{
+  const r=document.documentElement, cur=r.getAttribute("data-theme");
+  const dark=cur?cur==="dark":matchMedia("(prefers-color-scheme:dark)").matches;
+  r.setAttribute("data-theme", dark?"light":"dark");
+});
+
+/* ---------- tabs ---------- */
+document.querySelector(".tabs").addEventListener("click", e=>{
+  const el=e.target.closest(".tab"); if(!el) return;
+  document.querySelectorAll(".tab").forEach(t=>t.classList.remove("on")); el.classList.add("on");
+  const t=el.dataset.tab;
+  $("#tabOverview").hidden = t!=="overview";
+  $("#tabBranch").hidden   = t!=="branch";
+  if(t==="branch" && !branchLoaded) loadBranch();
+});
+
+/* ---------- app init ---------- */
+async function showApp(user){
+  ROLE = user.role;
+  $("#loginView").hidden = true; $("#appView").hidden = false;
+  $("#appSub").textContent = "ผู้ใช้: " + user.username + " · " + user.role;
+  $("#runBtn").hidden = (ROLE !== "admin");   // ปุ่มรัน ETL เฉพาะ admin
+  loadOverview();
+}
+window.addEventListener("DOMContentLoaded", async ()=>{
+  if(TOKEN){ try{ const me=await api("/api/me"); showApp(me); }catch(e){ doLogout(); } }
+});
+
+/* ---------- overview ---------- */
+const tierLabel={all:"ทั่วไป",wide:"กว้าง",specific:"เฉพาะ",none:"ไม่ผูก"};
+const tierCls={all:"t-all",wide:"t-wide",specific:"t-specific",none:"t-none"};
+const stCls={Active:"p-act",Upcoming:"p-up",Expired:"p-exp"};
+let fStatus="Active", fTier="", fq="", qTimer;
+
+async function loadSummary(){
+  try{
+    const s = await api("/api/coupons/summary");
+    $("#kAct").textContent=(s.by_status.Active||0).toLocaleString();
+    $("#kUp").textContent=(s.by_status.Upcoming||0).toLocaleString();
+    $("#kExp").textContent=(s.by_status.Expired||0).toLocaleString();
+    $("#kAll").textContent=(s.total||0).toLocaleString();
+  }catch(e){}
+}
+async function loadOverview(){
+  loadSummary();
+  $("#cLoad").hidden=false; $("#cEmpty").hidden=true;
+  const p=new URLSearchParams();
+  if(fStatus) p.set("status",fStatus);
+  if(fTier) p.set("tier",fTier);
+  if(fq) p.set("q",fq);
+  p.set("limit","1000");
+  try{
+    const d = await api("/api/coupons?"+p.toString());
+    $("#cCount").textContent = "แสดง "+d.count.toLocaleString()+" จาก "+d.total.toLocaleString()+" คูปอง";
+    const tb=$("#cBody");
+    if(!d.coupons.length){ tb.innerHTML=""; $("#cEmpty").hidden=false; $("#cLoad").hidden=true; return; }
+    tb.innerHTML = d.coupons.map(x=>{
+      const disc = x.disc_pct>0 ? x.disc_pct+"%" : (x.disc_amt>0 ? "฿"+x.disc_amt : "—");
+      const tm = (x.stime && x.stime!=="00:00") ? '<span style="font-family:var(--mono);color:var(--orange)">'+x.stime+"–"+(x.etime||"")+"</span>" : '<span style="color:var(--muted)">ทั้งวัน</span>';
+      const send = x.cp_status===2 ? '<span class="st st-ok">Submit</span>' : (x.cp_status===1 ? '<span class="st st-offline">Draft</span>' : "—");
+      return '<tr><td><span class="code" data-cp="'+esc(x.code)+'">'+esc(x.code)+"</span></td>"+
+        '<td class="desc">'+esc(x.desc)+(x.mem_only?' <span class="tier t-specific">Member</span>':"")+"</td>"+
+        '<td class="nums">'+(x.start||"")+'</td><td class="nums">'+(x.end||"")+"</td>"+
+        "<td>"+tm+'</td><td class="nums">'+disc+'</td><td class="nums">'+x.shops.toLocaleString()+"</td>"+
+        '<td><span class="tier '+(tierCls[x.tier]||"")+'">'+(tierLabel[x.tier]||x.tier)+"</span></td>"+
+        "<td>"+send+'</td><td><span class="pill '+(stCls[x.status]||"")+'">'+x.status+"</span></td></tr>";
+    }).join("");
+  }catch(e){ $("#cCount").textContent="โหลดไม่สำเร็จ: "+e.message; }
+  finally{ $("#cLoad").hidden=true; }
+}
+$("#q").addEventListener("input", e=>{ clearTimeout(qTimer); qTimer=setTimeout(()=>{fq=e.target.value.trim();loadOverview();},250); });
+$("#statusF").addEventListener("click", e=>{ const el=e.target.closest(".chip"); if(!el)return;
+  $("#statusF").querySelectorAll(".chip").forEach(c=>c.classList.remove("on")); el.classList.add("on"); fStatus=el.dataset.s; loadOverview(); });
+$("#tierF").addEventListener("click", e=>{ const el=e.target.closest(".chip"); if(!el)return;
+  $("#tierF").querySelectorAll(".chip").forEach(c=>c.classList.remove("on")); el.classList.add("on"); fTier=el.dataset.t; loadOverview(); });
+
+/* coupon detail modal */
+$("#cBody").addEventListener("click", async e=>{
+  const el=e.target.closest(".code"); if(!el)return;
+  openModal("กำลังโหลด…");
+  try{
+    const d = await api("/api/coupon/"+encodeURIComponent(el.dataset.cp));
+    const shops = d.shops.slice(0,500).map(s=>'<tr><td class="nums">'+esc(s.shop)+"</td><td>"+esc(s.name)+"</td></tr>").join("");
+    openModal(
+      "<h2>"+esc(d.code)+"</h2><div class='sub'>"+esc(d.desc)+"</div>"+
+      "<div style='margin:12px 0;font-size:.85rem'>ช่วง: "+(d.start||"?")+" → "+(d.end||"?")+
+      " · ส่วนลด "+(d.disc_pct>0?d.disc_pct+"%":("฿"+d.disc_amt))+" · tier "+(tierLabel[d.tier]||d.tier)+
+      " · <b>"+d.shop_count.toLocaleString()+" สาขา</b></div>"+
+      "<div class='tscroll'><table><thead><tr><th>รหัสสาขา</th><th>ชื่อ</th></tr></thead><tbody>"+shops+"</tbody></table></div>"+
+      (d.shops.length>500?"<div class='sub' style='margin-top:8px'>แสดง 500 จาก "+d.shop_count+"</div>":""));
+  }catch(err){ openModal("<p style='color:var(--red)'>"+esc(err.message)+"</p>"); }
+});
+
+/* ---------- branch check ---------- */
+let branchLoaded=false;
+async function loadBranch(){
+  branchLoaded=true;
+  $("#bLoad").hidden=false; $("#bEmpty").hidden=true;
+  try{
+    const s = await api("/api/shops/summary");
+    const by=s.by_status||{};
+    $("#bOk").textContent=(by.ok||0).toLocaleString();
+    $("#bInc").textContent=(by.incomplete||0).toLocaleString();
+    $("#bOff").textContent=(by.offline||0).toLocaleString();
+    $("#bMiss").textContent=(s.total_missing_active!=null?s.total_missing_active:0).toLocaleString();
+    $("#bRun").textContent = s.finished_at ? s.finished_at.replace("T"," ").slice(0,16) : "ยังไม่มีผล";
+    const d = await api("/api/shops?only_bad=1");
+    $("#bCount").textContent = "สาขาที่มีปัญหา "+d.count.toLocaleString()+" แห่ง (เรียงตามตกหล่นมากสุด)";
+    const tb=$("#bBody");
+    if(!d.shops.length){ tb.innerHTML=""; $("#bEmpty").textContent="✅ ทุกสาขารับโปรครบ"; $("#bEmpty").hidden=false; $("#bLoad").hidden=true; return; }
+    tb.innerHTML = d.shops.map(x=>{
+      const stc = x.status==="incomplete"?"st-incomplete":(x.status==="offline"?"st-offline":"st-ok");
+      const stl = x.status==="incomplete"?"มีตกหล่น":(x.status==="offline"?"ต่อไม่ได้":"ครบ");
+      const code = x.missing_active>0 ? '<span class="code" data-shop="'+esc(x.shop)+'">'+esc(x.shop)+"</span>" : esc(x.shop);
+      return "<tr><td>"+code+'</td><td>'+esc(x.name||"")+'</td><td><span class="st '+stc+'">'+stl+"</span></td>"+
+        '<td class="nums">'+x.should_have+'</td><td class="nums">'+x.branch_has+'</td><td class="nums">'+x.matched+"</td>"+
+        '<td class="nums" style="color:var(--red);font-weight:600">'+x.missing_active+'</td>'+
+        '<td class="nums">'+x.missing_expired+'</td><td class="nums">'+x.extra+"</td></tr>";
+    }).join("");
+  }catch(e){ $("#bCount").textContent="โหลดไม่สำเร็จ: "+e.message; }
+  finally{ $("#bLoad").hidden=true; }
+}
+$("#bBody").addEventListener("click", async e=>{
+  const el=e.target.closest(".code"); if(!el)return;
+  openModal("กำลังโหลด…");
+  try{
+    const d = await api("/api/shop/"+encodeURIComponent(el.dataset.shop)+"/missing");
+    const rows = d.missing.map(m=>'<tr><td class="code">'+esc(m.code)+"</td><td>"+esc(m.desc)+
+      '</td><td class="nums" style="color:var(--red)">'+(m.end||"")+"</td></tr>").join("");
+    openModal("<h2>สาขา "+esc(d.shop)+"</h2><div class='sub'>🔴 "+d.count+" คูปองที่ควรมีแต่ไม่มี (ยังไม่หมดอายุ)</div>"+
+      "<div class='tscroll' style='margin-top:12px'><table><thead><tr><th>รหัส</th><th>ชื่อโปร</th><th>หมดอายุ</th></tr></thead><tbody>"+rows+"</tbody></table></div>");
+  }catch(err){ openModal("<p style='color:var(--red)'>"+esc(err.message)+"</p>"); }
+});
+
+/* ---------- run ETL (admin) ---------- */
+let polling=null;
+$("#runBtn").addEventListener("click", async ()=>{
+  if(!confirm("รัน ETL ดึงข้อมูลล่าสุด + เทียบทุกสาขา?\n(ใช้เวลาสักครู่ หน้าเว็บจะอัปเดตเองเมื่อเสร็จ)")) return;
+  const btn=$("#runBtn");
+  try{
+    const last = await api("/api/runs?limit=1");
+    const lastId = last.runs.length ? last.runs[0].run_id : 0;
+    const r = await api("/api/sync/run", {method:"POST", body:"{}"});
+    if(r.already_running){ alert("มี ETL กำลังรันอยู่แล้ว รอสักครู่"); }
+    btn.disabled=true; btn.textContent="⏳ กำลังรัน ETL…";
+    // poll จนกว่าจะมี run ใหม่ที่ status=done
+    clearInterval(polling);
+    polling=setInterval(async ()=>{
+      try{
+        const d = await api("/api/runs?limit=1");
+        const run = d.runs[0];
+        if(run && run.run_id > lastId && run.status==="done"){
+          clearInterval(polling);
+          btn.disabled=false; btn.textContent="🔄 รัน ETL ตอนนี้";
+          branchLoaded=false; loadBranch(); loadSummary();
+          alert("ETL เสร็จแล้ว ✅  ต่อติด "+run.shops_ok+"/"+run.shops_total+" สาขา · ตกหล่นรวม "+run.total_missing_active);
+        }
+      }catch(e){}
+    }, 5000);
+  }catch(err){ alert("สั่งรันไม่สำเร็จ: "+err.message); btn.disabled=false; btn.textContent="🔄 รัน ETL ตอนนี้"; }
+});
+
+/* ---------- modal ---------- */
+function openModal(html){ $("#modalBody").innerHTML=html; $("#modal").hidden=false; }
+$("#modalX").addEventListener("click", ()=>$("#modal").hidden=true);
+$("#modal").addEventListener("click", e=>{ if(e.target.id==="modal") $("#modal").hidden=true; });
+</script>
+</body>
+</html>
